@@ -115,18 +115,12 @@ func NewMap(path string) (*Map, error) {
 }
 
 func (m *Map) Draw() (*image.RGBA, error) {
-	var r image.Rectangle
-	var c *image.Uniform
-	var visited, length, position int
-	var x0, y0, x1, y1 int
-	var ix, iy int
-	var nx, ny int
-
 	img := image.NewRGBA(image.Rect(0, 0, m.width*xo, m.height*yo))
 	draw.Draw(img, img.Bounds(), CBG, image.ZP, draw.Src)
 
+	iy := 0
 	for y := m.s; y <= m.n; y += 1 {
-		ix = 0
+		ix := 0
 		for x := m.w; x <= m.e; x += 1 {
 			fmt.Printf("At %dx%d - %dx%d\n", x, y, ix, iy)
 
@@ -150,8 +144,8 @@ func (m *Map) Draw() (*image.RGBA, error) {
 
 				scanner.Scan()
 				data := strings.NewReader(scanner.Text())
-				position = 0
 
+				var visited, length, position int
 				for {
 					n, err := fmt.Fscanf(data, "%d %d", &visited, &length)
 					if err != nil && err != io.EOF {
@@ -162,31 +156,21 @@ func (m *Map) Draw() (*image.RGBA, error) {
 					}
 
 					if visited == 1 {
-						x0 = position % MAPX
-						y0 = position / MAPX
-						x1 = (position + length - 1) % MAPX
-						y1 = (position + length - 1) / MAPX
+						x0 := position % MAPX
+						y0 := position / MAPX
+						x1 := (position + length - 1) % MAPX
+						y1 := (position + length - 1) / MAPX
 
 						if y0 == y1 {
 							// simple same-line case
-							r = image.Rect(x0, y0, x1, y1)
-							transform_rect(&r, ix, iy)
-							draw.Draw(img, r, CFG, image.ZP, draw.Src)
+							draw_rect(img, CFG, draw.Src, ix, iy, x0, y0, x1, y1)
 						} else {
 							// multi-line case, try to make big blocks if possible
-							r := image.Rect(x0, y0, MAPX-1, y0)
-							transform_rect(&r, ix, iy)
-							draw.Draw(img, r, CFG, image.ZP, draw.Src)
-
+							draw_rect(img, CFG, draw.Src, ix, iy, x0, y0, MAPX-1, y0)
 							if y0+1 != y1 {
-								r = image.Rect(0, y0+1, MAPX-1, y1-1)
-								transform_rect(&r, ix, iy)
-								draw.Draw(img, r, CFG, image.ZP, draw.Src)
+								draw_rect(img, CFG, draw.Src, ix, iy, 0, y0+1, MAPX-1, y1-1)
 							}
-
-							r = image.Rect(0, y1, x1, y1)
-							transform_rect(&r, ix, iy)
-							draw.Draw(img, r, CFG, image.ZP, draw.Src)
+							draw_rect(img, CFG, draw.Src, ix, iy, 0, y1, x1, y1)
 						}
 					}
 					position += length
@@ -195,6 +179,7 @@ func (m *Map) Draw() (*image.RGBA, error) {
 				scanner.Scan() // E 10
 				scanner.Scan() // 0 32400
 
+				var nx, ny int
 				for scanner.Scan() {
 					data = strings.NewReader(scanner.Text())
 					n, _ := fmt.Fscanf(data, "N %d %d", &nx, &ny)
@@ -202,9 +187,7 @@ func (m *Map) Draw() (*image.RGBA, error) {
 						break
 					}
 
-					r = image.Rect(nx, ny, nx, ny)
-					transform_rect(&r, ix, iy)
-					draw.Draw(img, r, CNOTE, image.ZP, draw.Src)
+					draw_rect(img, CNOTE, draw.Over, ix, iy, nx, ny, nx, ny)
 
 					scanner.Scan() // skip note text
 				}
@@ -213,27 +196,17 @@ func (m *Map) Draw() (*image.RGBA, error) {
 			}
 
 			// draw grid/origin
+			var c image.Image
 			if x == 0 && y == 0 {
 				c = CORIGIN
 			} else {
 				c = CGRID
 			}
 
-			r = image.Rect(0, 0, MAPX-1, 0) // top-edge
-			transform_rect(&r, ix, iy)
-			draw.Draw(img, r, c, image.ZP, draw.Over)
-
-			r = image.Rect(0, MAPY-1, MAPX-1, MAPY-1) // bottom-edge
-			transform_rect(&r, ix, iy)
-			draw.Draw(img, r, c, image.ZP, draw.Over)
-
-			r = image.Rect(0, 0, 0, MAPY-1) // left-edge
-			transform_rect(&r, ix, iy)
-			draw.Draw(img, r, c, image.ZP, draw.Over)
-
-			r = image.Rect(MAPX-1, 0, MAPX-1, MAPY-1) // right-edge
-			transform_rect(&r, ix, iy)
-			draw.Draw(img, r, c, image.ZP, draw.Over)
+			draw_rect(img, c, draw.Over, ix, iy, 0, 0, MAPX-1, 0)           // top-edge
+			draw_rect(img, c, draw.Over, ix, iy, 0, MAPY-1, MAPX-1, MAPY-1) // bottom-edge
+			draw_rect(img, c, draw.Over, ix, iy, 0, 0, 0, MAPY-1)           // left-edge
+			draw_rect(img, c, draw.Over, ix, iy, MAPX-1, 0, MAPX-1, MAPY-1) // right-edge
 
 			ix += 1
 		}
@@ -243,11 +216,12 @@ func (m *Map) Draw() (*image.RGBA, error) {
 	return img, nil
 }
 
-func transform_rect(i *image.Rectangle, x, y int) {
-	i.Min.X = (x * xo) + (i.Min.X * SCALE)
-	i.Min.Y = (y * yo) + (i.Min.Y * SCALE)
-	i.Max.X = (x * xo) + ((i.Max.X + 1) * SCALE)
-	i.Max.Y = (y * yo) + ((i.Max.Y + 1) * SCALE)
+func draw_rect(img draw.Image, color image.Image, mode draw.Op, ix, iy, x0, y0, x1, y1 int) {
+	x0 = (ix * xo) + (x0 * SCALE)
+	y0 = (iy * yo) + (y0 * SCALE)
+	x1 = (ix * xo) + ((x1 + 1) * SCALE)
+	y1 = (iy * yo) + ((y1 + 1) * SCALE)
+	draw.Draw(img, image.Rect(x0, y0, x1, y1), color, image.ZP, mode)
 }
 
 func main() {
